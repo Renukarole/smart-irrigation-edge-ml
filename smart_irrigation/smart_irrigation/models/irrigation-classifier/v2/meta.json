@@ -1,0 +1,24 @@
+{
+  "name": "irrigation-classifier",
+  "version": 2,
+  "stage": "Production",
+  "created": "2026-10-28 09:32:59",
+  "metrics": {
+    "accuracy": 0.9708,
+    "precision": 0.9747,
+    "recall": 0.9626,
+    "f1": 0.9686
+  },
+  "params": {
+    "algorithm": "logistic_regression",
+    "train_rows": 4800,
+    "test_rows": 1200
+  },
+  "features": [
+    "soil_moisture",
+    "temperature",
+    "humidity",
+    "rainfall_mm",
+    "light_lux"
+  ]
+}

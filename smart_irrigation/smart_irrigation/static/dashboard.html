@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Irrigation - Edge Dashboard</title>
+<style>
+  :root {
+    --bg:#f6f7f4; --card:#ffffff; --text:#1d2a22; --muted:#667267; --line:#e3e7e0;
+    --ok:#2f8f4e; --ok-bg:#e4f3e8; --water:#1f6fc5; --water-bg:#e2eefb;
+    --z1:#1f77b4; --z2:#e07b00; --z3:#8a4fbf; --z4:#c2410c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121714; --card:#1a211d; --text:#e6ece7; --muted:#93a096; --line:#2b352e;
+      --ok:#5fcf84; --ok-bg:#1c3326; --water:#6db3ff; --water-bg:#182c44;
+      --z1:#6db3ff; --z2:#ffb454; --z3:#c39bf0; --z4:#ff8a5c; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px 16px 40px; }
+  header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:18px; }
+  h1 { font-size:20px; margin:0; }
+  .sub { color:var(--muted); font-size:13px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:var(--card); border:1px solid var(--line); font-size:13px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); }
+  .dot.live { background:var(--ok); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  .grid { display:grid; gap:12px; }
+  .kpis { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin-bottom:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .kpi .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi .value { font-size:26px; font-weight:650; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .zones { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-bottom:12px; }
+  .zone h3 { margin:0 0 6px; font-size:14px; display:flex; align-items:center; gap:7px; }
+  .swatch { width:10px; height:10px; border-radius:3px; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:6px; font-size:12px; font-weight:600; }
+  .badge.go { background:var(--water-bg); color:var(--water); }
+  .badge.no { background:var(--ok-bg); color:var(--ok); }
+  .bar { height:8px; background:var(--line); border-radius:4px; margin:10px 0 6px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--water); transition:width .4s; }
+  .meta { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .chart-card { margin-bottom:12px; }
+  .chart-card h2, .table-card h2 { font-size:14px; margin:0 0 8px; }
+  svg { width:100%; height:auto; display:block; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--muted); margin-top:6px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  .scroll { overflow-x:auto; }
+  .empty { color:var(--muted); text-align:center; padding:24px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Smart Irrigation - Edge Dashboard</h1>
+      <div class="sub">Real-time irrigation decisions from the on-gateway ML model</div>
+    </div>
+    <div class="pill"><span class="dot" id="dot"></span><span id="status">Waiting for data...</span></div>
+  </header>
+
+  <div class="grid kpis">
+    <div class="card kpi"><div class="label">Readings</div><div class="value" id="k-total">0</div></div>
+    <div class="card kpi"><div class="label">Irrigate decisions</div><div class="value" id="k-irr">0</div></div>
+    <div class="card kpi"><div class="label">Avg inference</div><div class="value" id="k-lat">0 ms</div></div>
+    <div class="card kpi"><div class="label">Model</div><div class="value" id="k-model">-</div></div>
+  </div>
+
+  <div class="grid zones" id="zones"></div>
+
+  <div class="card chart-card">
+    <h2>Soil moisture by zone (%)</h2>
+    <div id="chart"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card table-card">
+    <h2>Latest predictions</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Time</th><th>Zone</th><th>Soil %</th><th>Temp °C</th><th>Humidity %</th><th>Rain mm</th><th>Decision</th><th>Prob.</th><th>Latency</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+    <div class="empty" id="empty">No readings yet. Start the simulator: <code>python simulator.py</code></div>
+  </div>
+</div>
+
+<script>
+const COLORS = ['--z1','--z2','--z3','--z4'];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $ = id => document.getElementById(id);
+
+function drawChart(data, zones) {
+  const W = 1000, H = 280, L = 40, R = 12, T = 12, B = 24;
+  const n = Math.max(...zones.map(z => data.filter(d => d.sensor_id === z).length), 2);
+  const x = i => L + (i / (n - 1)) * (W - L - R);
+  const y = v => T + (1 - v / 70) * (H - T - B);
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Soil moisture over time per zone">`;
+  for (let v = 0; v <= 70; v += 10) {
+    s += `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}"/>`;
+    s += `<text x="${L-6}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${v}</text>`;
+  }
+  zones.forEach((z, zi) => {
+    const pts = data.filter(d => d.sensor_id === z);
+    const col = css(COLORS[zi % 4]);
+    s += `<polyline fill="none" stroke="${col}" stroke-width="2" points="${pts.map((d,i)=>x(i)+','+y(d.soil_moisture)).join(' ')}"/>`;
+    pts.forEach((d, i) => {
+      if (d.irrigate) s += `<circle cx="${x(i)}" cy="${y(d.soil_moisture)}" r="4" fill="${css('--card')}" stroke="${col}" stroke-width="2"/>`;
+    });
+  });
+  s += '</svg>';
+  $('chart').innerHTML = s;
+  $('legend').innerHTML = zones.map((z, zi) => `<span><i class="swatch" style="background:${css(COLORS[zi%4])}"></i>${z}</span>`).join('')
+    + '<span>○ hollow marker = irrigate decision</span>';
+}
+
+function render(data, stats) {
+  const zones = [...new Set(data.map(d => d.sensor_id))].sort();
+  $('k-total').textContent = stats.total;
+  $('k-irr').textContent = stats.irrigate;
+  $('k-lat').textContent = stats.avg_latency_ms + ' ms';
+  $('k-model').textContent = 'v' + stats.model_version + ' · ' + (stats.model_accuracy * 100).toFixed(1) + '%';
+  $('empty').style.display = data.length ? 'none' : 'block';
+
+  $('zones').innerHTML = zones.map((z, zi) => {
+    const last = [...data].reverse().find(d => d.sensor_id === z);
+    return `<div class="card zone">
+      <h3><i class="swatch" style="background:${css(COLORS[zi%4])}"></i>${z}
+        <span class="badge ${last.irrigate ? 'go' : 'no'}" style="margin-left:auto">${last.irrigate ? 'IRRIGATE' : 'OK'}</span></h3>
+      <div class="bar"><i style="width:${Math.min(100, last.soil_moisture / 65 * 100)}%"></i></div>
+      <div class="meta">Soil ${last.soil_moisture}% · ${last.temperature}°C · ${last.humidity}% RH · p=${last.probability}</div>
+    </div>`;
+  }).join('');
+
+  if (zones.length) drawChart(data, zones);
+
+  $('rows').innerHTML = [...data].reverse().slice(0, 12).map(d => `<tr>
+    <td>${d.timestamp}</td><td>${d.sensor_id}</td><td>${d.soil_moisture}</td><td>${d.temperature}</td>
+    <td>${d.humidity}</td><td>${d.rainfall_mm}</td>
+    <td><span class="badge ${d.irrigate ? 'go' : 'no'}">${d.irrigate ? 'IRRIGATE' : 'NO IRRIGATION'}</span></td>
+    <td>${d.probability}</td><td>${d.latency_ms} ms</td></tr>`).join('');
+}
+
+async function tick() {
+  try {
+    const [r, s] = await Promise.all([fetch('/readings?limit=120'), fetch('/stats')]);
+    render(await r.json(), await s.json());
+    $('dot').classList.add('live');
+    $('status').textContent = 'Live · updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('dot').classList.remove('live');
+    $('status').textContent = 'Edge API unreachable';
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

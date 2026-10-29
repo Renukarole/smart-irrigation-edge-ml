@@ -1,0 +1,5 @@
+model,MAE,RMSE,R2
+Linear (Ridge),0.0197,0.0392,0.9979
+Polynomial deg-2 Ridge,0.0152,0.0325,0.9985
+Random Forest,0.0159,0.0345,0.9983
+Gradient Boosting,0.0158,0.0336,0.9984
